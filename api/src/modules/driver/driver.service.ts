@@ -1,7 +1,7 @@
 import { createRequire } from 'node:module';
 import { Logger } from '../../infra/logger.js';
 import { DriverRepository } from './driver.repository.js';
-import { montarPosicao, type MotoristaPosicao } from './driver.types.js';
+import { montarPosicao, projetarPosicaoPublica, type MotoristaPosicao, type MotoristaPosicaoPublica } from './driver.types.js';
 
 const require_ = createRequire(import.meta.url);
 // ponte do roteirizador antigo. so usamos a distancia daqui; o resto do modulo
@@ -80,5 +80,11 @@ export class DriverService {
 
   async listarOnline(cityId: number): Promise<MotoristaPosicao[]> { return this.repo.listarOnline(cityId); }
 
+  async listarOnlinePublico(cityId: number): Promise<MotoristaPosicaoPublica[]> {
+    const online = await this.repo.listarOnline(cityId);
+    return online.map(projetarPosicaoPublica);
+  }
+
   async localizarPorSocket(s: string): Promise<MotoristaPosicao | null> { return this.repo.localizarPorSocket(s); }
 }
+

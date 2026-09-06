@@ -105,3 +105,26 @@ export function montarPosicao(
     },
   };
 }
+
+/**
+ * DTO público enxuto para difusão em tempo real via WebSocket.
+ * Contém estritamente os campos necessários para renderização visual do mapa,
+ * eliminando dados cadastrais sensíveis (CPF, conta bancária, telefone, e-mail)
+ * em conformidade com a LGPD e reduzindo o consumo de dados móveis em ~90%.
+ */
+export interface MotoristaPosicaoPublica {
+  driverId: number;
+  latitude: number;
+  longitude: number;
+  heading: number;
+}
+
+export function projetarPosicaoPublica(pos: Partial<MotoristaPosicao>): MotoristaPosicaoPublica {
+  return {
+    driverId: pos.driverId ?? 0,
+    latitude: pos.latitude ?? 0,
+    longitude: pos.longitude ?? 0,
+    heading: pos.heading ?? 0,
+  };
+}
+

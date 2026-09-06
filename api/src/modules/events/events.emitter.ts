@@ -20,7 +20,7 @@ export class EventsEmitter {
   }
 
   public async emitDriverLocations(cityId: number) {
-    const drivers = await this.driverService.listarOnline(cityId);
+    const drivers = await this.driverService.listarOnlinePublico(cityId);
     this.emitEvent('driver.positions', drivers);
   }
 
