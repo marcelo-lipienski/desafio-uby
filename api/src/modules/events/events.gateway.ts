@@ -54,7 +54,7 @@ export class EventsGateway {
     if (this.cidadesAtivas.size === 0) return;
 
     for (const cityId of Array.from(this.cidadesAtivas)) {
-      const online = await this.driverService.listarOnline(cityId);
+      const online = await this.driverService.listarOnlinePublico(cityId);
       if (online.length === 0) {
         this.cidadesAtivas.delete(cityId);
         continue;
@@ -151,7 +151,7 @@ export class EventsGateway {
 
     if (p) {
       await this.driverService.desconectar(p.driverId);
-      const online = await this.driverService.listarOnline(p.cityId);
+      const online = await this.driverService.listarOnlinePublico(p.cityId);
       if (online.length === 0) {
         this.cidadesAtivas.delete(p.cityId);
       }

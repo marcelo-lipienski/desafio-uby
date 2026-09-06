@@ -97,7 +97,7 @@ async function bootstrap() {
 
   app.get('/drivers/online', async (req, res) => {
     const cityId = num(req.query.cityId, 1);
-    const motoristas = await driverService.listarOnline(cityId);
+    const motoristas = await driverService.listarOnlinePublico(cityId);
     res.json({ cityId, total: motoristas.length, motoristas });
   });
 

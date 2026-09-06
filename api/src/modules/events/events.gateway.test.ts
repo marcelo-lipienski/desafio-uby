@@ -113,6 +113,15 @@ describe('EventsGateway - Correção Issue 1 (Broadcast Desacoplado)', () => {
       listarOnline: async (cityId: number) => {
         return onlineDriversByCity[cityId] || [];
       },
+      listarOnlinePublico: async (cityId: number) => {
+        const drivers = onlineDriversByCity[cityId] || [];
+        return drivers.map((d) => ({
+          driverId: d.driverId,
+          latitude: d.latitude,
+          longitude: d.longitude,
+          heading: d.heading,
+        }));
+      },
       localizarPorSocket: async (_socketId: string) => {
         return { driverId: 10, cityId: 1 };
       },
