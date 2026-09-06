@@ -92,6 +92,11 @@ export class EventsGateway {
       this.salas.entrar(client, Sala.corrida(tripReference));
     }
 
+    if (q.role === 'painel' || q.painel) {
+      this.salas.entrar(client, Sala.painelCentral());
+      if (cityId) this.salas.entrar(client, Sala.painel(cityId));
+    }
+
     if (driverId) {
       // fluxo de motorista (antes era conectarMotorista, ver comentario acima)
       const d = Number(driverId);

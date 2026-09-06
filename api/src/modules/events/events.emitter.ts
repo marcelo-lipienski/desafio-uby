@@ -34,6 +34,16 @@ export class EventsEmitter {
     this.server.emit(event, data);
   }
 
+  // emite evento exclusivamente para uma sala especifica (ex: painel:central)
+  emitToRoom(room: string, event: string, data: any) {
+    if (!this.server) {
+      this.logger.error('Server nao inicializado');
+      return;
+    }
+    _cnt++;
+    this.server.to(room).emit(event, data);
+  }
+
   // TODO: unificar com emitEvent. sao a mesma coisa desde o refactor de 2022,
   // mas tem chamador em algum lugar do painel antigo (checar antes de remover)
   emitAll(ev: string, d: any) {
