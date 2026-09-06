@@ -24,6 +24,9 @@ export const config = {
   /** TTL da posicao em cache, em segundos. */
   posicaoTtl: num(process.env.POSICAO_TTL, 60),
 
+  /** Intervalo do broadcast periódico de posições consolidadas (ms). */
+  broadcastIntervalMs: num(process.env.BROADCAST_INTERVAL_MS, 2000),
+
   /** Frota sintetica que roda dentro da API para manter a malha populada. */
   frota: {
     tamanho: num(process.env.FLEET_SIZE, 32),
