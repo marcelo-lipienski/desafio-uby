@@ -59,7 +59,7 @@ export class EventsGateway {
         this.cidadesAtivas.delete(cityId);
         continue;
       }
-      this.emitter.emitEvent('driver.positions', online);
+      this.emitter.emitToRoom(Sala.cidade(cityId), 'driver.positions', online);
     }
   }
 
@@ -93,8 +93,11 @@ export class EventsGateway {
     }
 
     if (q.role === 'painel' || q.painel) {
-      this.salas.entrar(client, Sala.painelCentral());
-      if (cityId) this.salas.entrar(client, Sala.painel(cityId));
+      if (cityId) {
+        this.salas.entrar(client, Sala.painel(cityId));
+      } else {
+        this.salas.entrar(client, Sala.painelCentral());
+      }
     }
 
     if (driverId) {
@@ -160,7 +163,7 @@ export class EventsGateway {
       if (online.length === 0) {
         this.cidadesAtivas.delete(p.cityId);
       }
-      this.emitter.emitEvent('driver.positions', online);
+      this.emitter.emitToRoom(Sala.cidade(p.cityId), 'driver.positions', online);
       this.logger.info(`motorista ${p.driverId} desconectado`);
     }
 
