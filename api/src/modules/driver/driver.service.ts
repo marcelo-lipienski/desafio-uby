@@ -82,7 +82,15 @@ export class DriverService {
 
   async listarOnlinePublico(cityId: number): Promise<MotoristaPosicaoPublica[]> {
     const online = await this.repo.listarOnline(cityId);
-    return online.map(projetarPosicaoPublica);
+    const validas: MotoristaPosicaoPublica[] = [];
+    for (const p of online) {
+      try {
+        validas.push(projetarPosicaoPublica(p));
+      } catch (e: any) {
+        this.logger.warn(`Descartando posicao invalida do motorista ${p?.driverId}: ${e?.message ?? e}`);
+      }
+    }
+    return validas;
   }
 
   async localizarPorSocket(s: string): Promise<MotoristaPosicao | null> { return this.repo.localizarPorSocket(s); }

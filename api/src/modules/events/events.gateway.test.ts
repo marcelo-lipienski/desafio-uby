@@ -1,6 +1,7 @@
 import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventsGateway } from './events.gateway.js';
+import { config } from '../../config.js';
 import type { Server, Socket } from 'socket.io';
 import type { EventsEmitter } from './events.emitter.js';
 import type { EventsRoomService } from './events.rooms.js';
@@ -93,7 +94,7 @@ describe('EventsGateway - Correção Issue 1 (Broadcast Desacoplado)', () => {
       conectar: async (driverId: number, _socketId: string, coords: any) => {
         return {
           driverId,
-          cityId: 1,
+          cityId: driverId >= 20 ? 2 : 1,
           latitude: coords.latitude,
           longitude: coords.longitude,
         };
@@ -133,6 +134,7 @@ describe('EventsGateway - Correção Issue 1 (Broadcast Desacoplado)', () => {
 
     const mockTelemetryService = {
       acompanhar: () => {},
+      parar: () => {},
     } as unknown as TelemetryService;
 
     const mockTelemetryExporter = {
@@ -225,10 +227,28 @@ describe('EventsGateway - Correção Issue 1 (Broadcast Desacoplado)', () => {
 
     gateway.registrar();
     assert.ok(serverConnHandler);
-    await serverConnHandler(socketClient); // Ativa cidade 1
+    await serverConnHandler(socketClient); // Ativa cidade 1 com motorista 10
 
-    // Simula ping na cidade 2
-    await socketEventHandlers['driver.location']({
+    // Conecta segundo motorista na cidade 2 com seu próprio socket
+    const socketHandlers2: Record<string, Function> = {};
+    const socketClient2 = {
+      id: 'socket-test-456',
+      handshake: {
+        query: { driverId: '20', latitude: '-21.30', longitude: '-46.71' },
+      },
+      rooms: new Set(['socket-test-456']),
+      emit: () => {},
+      on: (event: string, handler: Function) => {
+        socketHandlers2[event] = handler;
+      },
+      disconnect: () => {},
+      join: () => {},
+      leave: () => {},
+    };
+    await serverConnHandler(socketClient2 as any); // Ativa cidade 2 com motorista 20
+
+    // Simula ping na cidade 2 a partir do socket correto
+    await socketHandlers2['driver.location']({
       driverId: 20,
       latitude: -21.30,
       longitude: -46.71,
@@ -250,13 +270,13 @@ describe('EventsGateway - Correção Issue 1 (Broadcast Desacoplado)', () => {
     assert.strictEqual(broadCity2.data[0].driverId, 20, 'Sala da cidade 2 deve conter apenas motoristas da cidade 2');
   });
 
-  test('painel municipal entra exclusivamente em painel:cidade sem duplicar com painel:central', async () => {
+  test('painel municipal entra exclusivamente em painel:cidade sem duplicar com painel:central quando autenticado', async () => {
     gateway.registrar();
     assert.ok(serverConnHandler);
 
     const painelMunicipalSocket = {
       id: 'painel-muzambinho',
-      handshake: { query: { role: 'painel', cityId: '1' } },
+      handshake: { query: { role: 'painel', cityId: '1', token: config.panelToken } },
       rooms: new Set<string>(['painel-muzambinho']),
       emit: () => {},
       on: () => {},
@@ -272,7 +292,7 @@ describe('EventsGateway - Correção Issue 1 (Broadcast Desacoplado)', () => {
 
     const painelCentralSocket = {
       id: 'painel-central-geral',
-      handshake: { query: { role: 'painel' } },
+      handshake: { query: { role: 'painel', token: config.panelToken } },
       rooms: new Set<string>(['painel-central-geral']),
       emit: () => {},
       on: () => {},
@@ -284,6 +304,78 @@ describe('EventsGateway - Correção Issue 1 (Broadcast Desacoplado)', () => {
     await serverConnHandler(painelCentralSocket as any);
     assert.ok(painelCentralSocket.rooms.has('painel:central'), 'Painel geral deve entrar em painel:central');
     assert.ok(!painelCentralSocket.rooms.has('painel:1'), 'Painel geral não deve entrar em sala municipal específica');
+  });
+
+  test('rejeita conexão de painel sem credenciais válidas', async () => {
+    gateway.registrar();
+    assert.ok(serverConnHandler);
+
+    const painelInvasorSocket = {
+      id: 'invasor-painel',
+      handshake: { query: { role: 'painel' } }, // Sem token
+      rooms: new Set<string>(['invasor-painel']),
+      emit: (event: string, payload: any) => {
+        clientErrors.push({ event, payload });
+      },
+      on: () => {},
+      disconnect: () => {},
+      join: (r: string) => painelInvasorSocket.rooms.add(r),
+      leave: (r: string) => painelInvasorSocket.rooms.delete(r),
+    };
+
+    await serverConnHandler(painelInvasorSocket as any);
+
+    assert.ok(!painelInvasorSocket.rooms.has('painel:central'), 'Invasor não deve entrar na sala de painel');
+    const erroAuth = clientErrors.find((e) => e.event === 'error' && e.payload?.eventEmitted === 'auth');
+    assert.ok(erroAuth, 'Deve emitir erro de autenticação para conexão sem token de painel');
+  });
+
+  test('bloqueia join-room para salas de painel em conexões não autorizadas', async () => {
+    gateway.registrar();
+    assert.ok(serverConnHandler);
+
+    let joinRoomHandler: Function | null = null;
+    const socketComum = {
+      id: 'socket-comum',
+      handshake: { query: {} },
+      rooms: new Set<string>(['socket-comum']),
+      emit: (event: string, payload: any) => {
+        clientErrors.push({ event, payload });
+      },
+      on: (ev: string, fn: Function) => {
+        if (ev === 'join-room') joinRoomHandler = fn;
+      },
+      disconnect: () => {},
+      join: (r: string) => socketComum.rooms.add(r),
+      leave: (r: string) => socketComum.rooms.delete(r),
+    };
+
+    await serverConnHandler(socketComum as any);
+    assert.ok(joinRoomHandler);
+
+    joinRoomHandler({ sala: 'painel:central' });
+
+    assert.ok(!socketComum.rooms.has('painel:central'), 'Não deve permitir acesso via join-room a sala de painel');
+    const erroJoin = clientErrors.find((e) => e.event === 'error' && e.payload?.eventEmitted === 'join-room');
+    assert.ok(erroJoin, 'Deve emitir erro de acesso não autorizado');
+  });
+
+  test('rejeita ping de localização com driverId divergente do handshake (anti-spoofing)', async () => {
+    gateway.registrar();
+    assert.ok(serverConnHandler);
+    await serverConnHandler(socketClient); // Conectado com driverId: '10'
+
+    // Tenta enviar ping forjando driverId 99
+    await socketEventHandlers['driver.location']({
+      driverId: 99,
+      latitude: -21.376,
+      longitude: -46.525,
+    });
+
+    const erroSpoof = clientErrors.find(
+      (e) => e.event === 'error' && e.payload?.message?.includes('identidade de motorista divergente'),
+    );
+    assert.ok(erroSpoof, 'Deve rejeitar ping de motorista com ID diferente do socket autenticado');
   });
 
   test('remove cidade de cidadesAtivas quando não houver mais motoristas online', async () => {

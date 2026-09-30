@@ -34,5 +34,8 @@ export const config = {
     cidadePadrao: num(process.env.FLEET_CITY, 1),
   },
 
+  /** Token de autenticacao para conexoes e salas do painel. */
+  panelToken: process.env.PANEL_TOKEN ?? 'painel-segredo-interno',
+
   logLevel: process.env.LOG_LEVEL ?? 'info',
 };

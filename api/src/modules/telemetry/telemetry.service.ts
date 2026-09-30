@@ -13,6 +13,7 @@ interface AmostraTelemetria {
 export class TelemetryService {
   private readonly logger = new Logger('Telemetry');
   private readonly amostras: AmostraTelemetria[] = [];
+  private readonly timers = new Map<string, NodeJS.Timeout>();
 
   private readonly intervaloMs = 5000;
 
@@ -21,7 +22,7 @@ export class TelemetryService {
     let d = null;
     if (q.driverId) { d = Number(q.driverId); }
 
-    setInterval(() => {
+    const timer = setInterval(() => {
       this.amostras.push({
         socketId: client.id,
         driverId: d,
@@ -30,6 +31,16 @@ export class TelemetryService {
         rooms: client.rooms.size,
       });
     }, this.intervaloMs);
+
+    this.timers.set(client.id, timer);
+  }
+
+  parar(socketId: string): void {
+    const timer = this.timers.get(socketId);
+    if (timer) {
+      clearInterval(timer);
+      this.timers.delete(socketId);
+    }
   }
 
   relatorio() {
