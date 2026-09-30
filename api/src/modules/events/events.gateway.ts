@@ -93,10 +93,17 @@ export class EventsGateway {
     }
 
     if (q.role === 'painel' || q.painel) {
-      if (cityId) {
-        this.salas.entrar(client, Sala.painel(cityId));
+      const tokenFornecido = q.token || (client.handshake.auth && (client.handshake.auth as any).token);
+      if (tokenFornecido === config.panelToken) {
+        (client as any).isPainelAutorizado = true;
+        if (cityId) {
+          this.salas.entrar(client, Sala.painel(cityId));
+        } else {
+          this.salas.entrar(client, Sala.painelCentral());
+        }
       } else {
-        this.salas.entrar(client, Sala.painelCentral());
+        this.logger.warn(`acesso nao autorizado ao painel rejeitado para socket ${client.id}`);
+        this.emitter.emitError(client, 'auth', 'acesso nao autorizado ao painel');
       }
     }
 
@@ -129,7 +136,15 @@ export class EventsGateway {
     }
 
     client.on('driver.location', (dto: AtualizacaoPosicaoDto) => this.aoReceberPosicao(client, dto));
-    client.on('join-room', (dados: { sala: string }) => this.salas.entrar(client, dados?.sala));
+    client.on('join-room', (dados: { sala: string }) => {
+      if (dados?.sala?.startsWith('painel:')) {
+        if (!(client as any).isPainelAutorizado) {
+          this.emitter.emitError(client, 'join-room', 'acesso nao autorizado a sala de painel', { sala: dados.sala });
+          return;
+        }
+      }
+      this.salas.entrar(client, dados?.sala);
+    });
     client.on('leave-room', (dados: { sala: string }) => this.salas.sair(client, dados?.sala));
     client.on('disconnect', () => this.aoDesconectar(client));
   }
@@ -138,6 +153,15 @@ export class EventsGateway {
   private async aoReceberPosicao(client: Socket, dto: AtualizacaoPosicaoDto): Promise<void> {
     if (!dto?.driverId || dto.latitude == null || dto.longitude == null) {
       this.emitter.emitError(client, 'driver.location', 'parametros invalidos', dto);
+      return;
+    }
+
+    const q = client.handshake.query as Record<string, string>;
+    if (q.driverId && dto.driverId !== Number(q.driverId)) {
+      this.emitter.emitError(client, 'driver.location', 'identidade de motorista divergente do socket conectado', {
+        socketDriverId: Number(q.driverId),
+        payloadDriverId: dto.driverId,
+      });
       return;
     }
 
@@ -155,6 +179,7 @@ export class EventsGateway {
 
   private async aoDesconectar(client: Socket): Promise<void> {
     totalDisc++;
+    this.telemetria.parar(client.id);
     const p = await this.driverService.localizarPorSocket(client.id);
 
     if (p) {

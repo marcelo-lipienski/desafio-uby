@@ -116,4 +116,41 @@ describe('DriverService & DriverTypes - Correção Issue 2 (Sanitização e Prot
       assert.strictEqual((d as any).veiculo, undefined);
     }
   });
+
+  test('projetarPosicaoPublica rejeita e lança erro para coordenadas ou driverId ausentes ou inválidos', () => {
+    assert.throws(
+      () => projetarPosicaoPublica({ driverId: 1, latitude: null as any, longitude: -46.52 }),
+      /latitude inválida/,
+    );
+    assert.throws(
+      () => projetarPosicaoPublica({ driverId: 1, latitude: 95, longitude: -46.52 }),
+      /latitude inválida/,
+    );
+    assert.throws(
+      () => projetarPosicaoPublica({ driverId: 1, latitude: -21.37, longitude: -200 }),
+      /longitude inválida/,
+    );
+    assert.throws(
+      () => projetarPosicaoPublica({ driverId: null as any, latitude: -21.37, longitude: -46.52 }),
+      /driverId inválido/,
+    );
+  });
+
+  test('DriverService.listarOnlinePublico descarta posições anômalas sem virar zero em silêncio', async () => {
+    const mockRepo = {
+      listarOnline: async (_cityId: number) => {
+        return [
+          montarPosicao(motoristaMockRow, { latitude: -21.37, longitude: -46.52, heading: 90 }, 's1'),
+          // Posição corrompida (latitude nula)
+          { ...montarPosicao({ ...motoristaMockRow, id_driver: 99 }, { latitude: 0, longitude: 0 }, 's2'), latitude: null as any },
+        ];
+      },
+    } as unknown as DriverRepository;
+
+    const service = new DriverService(mockRepo);
+    const online = await service.listarOnlinePublico(1);
+
+    assert.strictEqual(online.length, 1, 'Deve descartar o registro com latitude nula');
+    assert.strictEqual(online[0].driverId, 42);
+  });
 });

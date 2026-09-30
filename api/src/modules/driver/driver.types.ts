@@ -120,11 +120,21 @@ export interface MotoristaPosicaoPublica {
 }
 
 export function projetarPosicaoPublica(pos: Partial<MotoristaPosicao>): MotoristaPosicaoPublica {
+  if (pos.driverId == null || !Number.isFinite(pos.driverId)) {
+    throw new Error('driverId inválido ou ausente para projeção de posição pública');
+  }
+  if (pos.latitude == null || !Number.isFinite(pos.latitude) || pos.latitude < -90 || pos.latitude > 90) {
+    throw new Error(`latitude inválida (${pos.latitude}) para o motorista ${pos.driverId}`);
+  }
+  if (pos.longitude == null || !Number.isFinite(pos.longitude) || pos.longitude < -180 || pos.longitude > 180) {
+    throw new Error(`longitude inválida (${pos.longitude}) para o motorista ${pos.driverId}`);
+  }
+
   return {
-    driverId: pos.driverId ?? 0,
-    latitude: pos.latitude ?? 0,
-    longitude: pos.longitude ?? 0,
-    heading: pos.heading ?? 0,
+    driverId: pos.driverId,
+    latitude: pos.latitude,
+    longitude: pos.longitude,
+    heading: Number.isFinite(pos.heading) ? Number(pos.heading) : 0,
   };
 }
 
