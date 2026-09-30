@@ -9,7 +9,7 @@ import type { TelemetryService } from '../telemetry/telemetry.service.js';
 import type { TelemetryExporter } from '../telemetry/telemetry.exporter.js';
 
 describe('EventsGateway - Correção Issue 1 (Broadcast Desacoplado)', () => {
-  let emittedEvents: Array<{ event: string; data: any }> = [];
+  let emittedEvents: Array<{ event: string; data: any; room?: string }> = [];
   let clientErrors: Array<{ event: string; payload: any }> = [];
   let telemetryPushed: any[] = [];
   let telemetryExported: any[] = [];
@@ -65,9 +65,12 @@ describe('EventsGateway - Correção Issue 1 (Broadcast Desacoplado)', () => {
       emitEvent: (event: string, data: any) => {
         emittedEvents.push({ event, data });
       },
+      emitToRoom: (room: string, event: string, data: any) => {
+        emittedEvents.push({ event, data, room });
+      },
       emitDriverLocations: async (cityId: number) => {
         const drivers = onlineDriversByCity[cityId] || [];
-        emittedEvents.push({ event: 'driver.positions', data: drivers });
+        emittedEvents.push({ event: 'driver.positions', data: drivers, room: `city:${cityId}` });
       },
       emitError: (_client: any, eventEmitted: string, message: string, data?: any) => {
         clientErrors.push({ event: 'error', payload: { eventEmitted, message, data } });
@@ -97,9 +100,10 @@ describe('EventsGateway - Correção Issue 1 (Broadcast Desacoplado)', () => {
       },
       atualizarPosicao: async (dto: AtualizacaoPosicaoDto) => {
         positionUpdates.push(dto);
+        const cityId = dto.driverId >= 20 ? 2 : 1;
         return {
           driverId: dto.driverId,
-          cityId: 1,
+          cityId,
           latitude: dto.latitude,
           longitude: dto.longitude,
           speed: dto.speed ?? 30,
@@ -209,7 +213,77 @@ describe('EventsGateway - Correção Issue 1 (Broadcast Desacoplado)', () => {
 
     const positionBroadcasts = emittedEvents.filter((e) => e.event === 'driver.positions');
     assert.strictEqual(positionBroadcasts.length, 1, 'Deve emitir exatamente 1 broadcast por tick');
+    assert.strictEqual(positionBroadcasts[0].room, 'city:1', 'Deve direcionar estritamente para a sala da cidade');
     assert.strictEqual(positionBroadcasts[0].data.length, 2);
+  });
+
+  test('tickBroadcast isola emissões entre múltiplas cidades sem cruzamento', async () => {
+    onlineDriversByCity = {
+      1: [{ driverId: 10, cityId: 1, latitude: -21.37, longitude: -46.52, heading: 90 }],
+      2: [{ driverId: 20, cityId: 2, latitude: -21.30, longitude: -46.71, heading: 180 }],
+    };
+
+    gateway.registrar();
+    assert.ok(serverConnHandler);
+    await serverConnHandler(socketClient); // Ativa cidade 1
+
+    // Simula ping na cidade 2
+    await socketEventHandlers['driver.location']({
+      driverId: 20,
+      latitude: -21.30,
+      longitude: -46.71,
+      heading: 180,
+    });
+
+    emittedEvents = [];
+    await gateway.tickBroadcast();
+
+    const broadcasts = emittedEvents.filter((e) => e.event === 'driver.positions');
+    assert.strictEqual(broadcasts.length, 2, 'Deve emitir 1 broadcast para cada cidade ativa');
+
+    const broadCity1 = broadcasts.find((b) => b.room === 'city:1');
+    const broadCity2 = broadcasts.find((b) => b.room === 'city:2');
+
+    assert.ok(broadCity1, 'Deve emitir para a sala city:1');
+    assert.ok(broadCity2, 'Deve emitir para a sala city:2');
+    assert.strictEqual(broadCity1.data[0].driverId, 10, 'Sala da cidade 1 deve conter apenas motoristas da cidade 1');
+    assert.strictEqual(broadCity2.data[0].driverId, 20, 'Sala da cidade 2 deve conter apenas motoristas da cidade 2');
+  });
+
+  test('painel municipal entra exclusivamente em painel:cidade sem duplicar com painel:central', async () => {
+    gateway.registrar();
+    assert.ok(serverConnHandler);
+
+    const painelMunicipalSocket = {
+      id: 'painel-muzambinho',
+      handshake: { query: { role: 'painel', cityId: '1' } },
+      rooms: new Set<string>(['painel-muzambinho']),
+      emit: () => {},
+      on: () => {},
+      disconnect: () => {},
+      join: (r: string) => painelMunicipalSocket.rooms.add(r),
+      leave: (r: string) => painelMunicipalSocket.rooms.delete(r),
+    };
+
+    await serverConnHandler(painelMunicipalSocket as any);
+
+    assert.ok(painelMunicipalSocket.rooms.has('painel:1'), 'Painel municipal deve entrar na sala da sua cidade');
+    assert.ok(!painelMunicipalSocket.rooms.has('painel:central'), 'Painel municipal NÃO deve entrar em painel:central');
+
+    const painelCentralSocket = {
+      id: 'painel-central-geral',
+      handshake: { query: { role: 'painel' } },
+      rooms: new Set<string>(['painel-central-geral']),
+      emit: () => {},
+      on: () => {},
+      disconnect: () => {},
+      join: (r: string) => painelCentralSocket.rooms.add(r),
+      leave: (r: string) => painelCentralSocket.rooms.delete(r),
+    };
+
+    await serverConnHandler(painelCentralSocket as any);
+    assert.ok(painelCentralSocket.rooms.has('painel:central'), 'Painel geral deve entrar em painel:central');
+    assert.ok(!painelCentralSocket.rooms.has('painel:1'), 'Painel geral não deve entrar em sala municipal específica');
   });
 
   test('remove cidade de cidadesAtivas quando não houver mais motoristas online', async () => {

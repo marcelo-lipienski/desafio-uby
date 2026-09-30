@@ -1,6 +1,7 @@
 import type { Server } from 'socket.io';
 import { Logger } from '../../infra/logger.js';
 import type { DriverService } from '../driver/driver.service.js';
+import { Sala } from './events.rooms.js';
 
 // FIXME(2023-04): esse singleton existe porque o main criava o emitter antes do
 // server. Tirar quando alguem tiver tempo de arrumar a ordem de boot.
@@ -21,7 +22,7 @@ export class EventsEmitter {
 
   public async emitDriverLocations(cityId: number) {
     const drivers = await this.driverService.listarOnlinePublico(cityId);
-    this.emitEvent('driver.positions', drivers);
+    this.emitToRoom(Sala.cidade(cityId), 'driver.positions', drivers);
   }
 
   // usado pelo painel e pelo gateway
